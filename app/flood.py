@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timedelta
 import json
 import pytz
+from os import path
 
 # 时区映射信息
 tzinfos = {'CST': pytz.timezone('Asia/Shanghai')}
@@ -17,31 +18,71 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-QBURL = os.environ.get("QBURL", "http://192.168.66.10:10000")
-QBUSER = os.environ.get("QBUSER", "admin")
-QBPWD = os.environ.get("QBPWD", "adminadmin")
-APIKEY = os.environ.get("APIKEY", "70390435-35fb-44e8-a207-fcd6be7099ef")
-DOWNLOADPATH = os.environ.get("DOWNLOADPATH", "/download/PT刷流")
+QBURL = os.environ.get("MT_BRUSH_MT_BRUSH_QBURL", "")
+QBUSER = os.environ.get("MT_BRUSH_MT_BRUSH_QBUSER", "")
+QBPWD = os.environ.get("MT_BRUSH_MT_BRUSH_QBPWD", "")
+APIKEY = os.environ.get("MT_BRUSH_MT_BRUSH_APIKEY", "")
+DOWNLOADPATH = os.environ.get("MT_BRUSH_MT_BRUSH_DOWNLOADPATH", "/download/PT刷流")
 
-SEND_URL = os.environ.get("SEND_URL", None)
-RSS = os.environ.get("RSS", "url")
-SPACE = int(float(os.environ.get("SPACE", 80)) * 1024 * 1024 * 1024)
-BOT_TOKEN = os.environ.get("BOT_TOKEN", None)
-CHAT_ID = int(os.environ.get("CHAT_ID", "646111111"))
-GET_METHOD = os.environ.get("GET_METHOD", False)
-MAX_SIZE = int(float(os.environ.get("MAX_SIZE", 30)) * 1024 * 1024 * 1024)
-MIN_SIZE = int(float(os.environ.get("MIN_SIZE", 1)) * 1024 * 1024 * 1024)
-FREE_TIME = int(float(os.environ.get("FREE_TIME", 10)) * 60 * 60)
-PUBLISH_BEFORE = int(float(os.environ.get("PUBLISH_BEFORE", 24)) * 60 * 60)
-PROXY = os.environ.get("PROXY", None)
-TAGS = os.environ.get("TAGS", "MT刷流")
-LS_RATIO = float(os.environ.get("LS_RATIO", 1))
-IPV6 = os.environ.get("IPV6", False)
+SEND_URL = os.environ.get("MT_BRUSH_MT_BRUSH_SEND_URL", None)
+RSS = os.environ.get("MT_BRUSH_MT_BRUSH_RSS", "url")
+SPACE = int(float(os.environ.get("MT_BRUSH_SPACE", 80)) * 1024 * 1024 * 1024)
+BOT_TOKEN = os.environ.get("MT_BRUSH_BOT_TOKEN", None)
+CHAT_ID = int(os.environ.get("MT_BRUSH_CHAT_ID", "646111111"))
+GET_METHOD = os.environ.get("MT_BRUSH_GET_METHOD", False)
+MAX_SIZE = int(float(os.environ.get("MT_BRUSH_MAX_SIZE", 30)) * 1024 * 1024 * 1024)
+MIN_SIZE = int(float(os.environ.get("MT_BRUSH_MIN_SIZE", 1)) * 1024 * 1024 * 1024)
+FREE_TIME = int(float(os.environ.get("MT_BRUSH_FREE_TIME", 10)) * 60 * 60)
+PUBLISH_BEFORE = int(float(os.environ.get("MT_BRUSH_PUBLISH_BEFORE", 24)) * 60 * 60)
+PROXY = os.environ.get("MT_BRUSH_PROXY", None)
+TAGS = os.environ.get("MT_BRUSH_TAGS", "MT刷流")
+LS_RATIO = float(os.environ.get("MT_BRUSH_LS_RATIO", 1))
+IPV6 = os.environ.get("MT_BRUSH_IPV6", False)
+
+NOTIFY_ENABLE = os.environ.get("MT_BRUSH_NOTIFY_ENABLE", False)
+BRUSH_SIZE = int(float(os.environ.get("MT_BRUSH_BRUSH_SIZE", 80)) * 1024 * 1024 * 1024)
+ALLOW_NON_FREE = os.environ.get("MT_BRUSH_ALLOW_NON_FREE", "False").lower() == "true"
+MAX_SEEDING_HOURS = int(os.environ.get("MT_BRUSH_MAX_SEEDING_HOURS", 48))  # 最大做种时间（小时）
+TARGET_RATIO = float(os.environ.get("MT_BRUSH_TARGET_RATIO", 3.0))  # 目标分享率
+NAME_REGEX = os.environ.get("MT_BRUSH_NAME_REGEX", "")  # 默认空字符串
+SEND_METHOD = os.environ.get("MT_BRUSH_SEND_METHOD", "normal").lower()  # normal/telegram/server/all
+name_pattern = None
+if NAME_REGEX:
+    try:
+        name_pattern = re.compile(NAME_REGEX, flags=re.IGNORECASE)  # 大小写不敏感
+        logging.info(f"已启用名称正则过滤: {NAME_REGEX}")
+    except re.error as e:
+        logging.error(f"MT_BRUSH_NAME_REGEX 正则表达式错误: {str(e)}")
+        exit(1)
+try:
+    name_pattern = re.compile(NAME_REGEX)
+except re.error as e:
+    logging.error(f"MT_BRUSH_NAME_REGEX 配置错误: {str(e)}")
+    exit(1)
 DATA_FILE = "flood_data.json"
 
 qb_session = requests.Session()
 mt_session = requests.Session()
 flood_torrents = []
+
+
+def send_message(message):
+    if not NOTIFY_ENABLE:
+        return
+
+    # 根据配置选择发送方式
+    if SEND_METHOD == "normal":
+        send("M-Team 刷流通知", message)
+    elif SEND_METHOD == "telegram":
+        send_telegram_message(message)
+    elif SEND_METHOD == "server":
+        send_server3_message(message)
+    elif SEND_METHOD == "all":
+        send("M-Team 刷流通知", message)
+        send_telegram_message(message)
+        send_server3_message(message)
+    else:
+        logging.warning(f"未知的通知方式配置：{SEND_METHOD}")
 
 
 # 添加Telegram通知
@@ -115,7 +156,7 @@ def get_torrent_detail(torrent_id):
 
 
 # 添加种子下载地址到QBittorrent
-def add_torrent(url, name):
+def add_torrent(url, name, detail=None):
     global flood_torrents
     add_torrent_url = QBURL + "/api/v2/torrents/add"
     if GET_METHOD == "True":
@@ -158,10 +199,60 @@ def add_torrent(url, name):
         logging.error(f"种子{name}添加失败！HTTP状态码：{response.status_code}")
         return False
 
-    logging.info(f"种子{name}添加成功！")
-    send_telegram_message(f"种子{name}添加成功！")
-    send_server3_message(f"种子{name}添加成功！")
+        # 修改通知部分
+    if detail and detail.get("discount"):
+        discount_status = "免费" if detail["discount"] in ["FREE", "_2X_FREE"] else "付费"
+    else:
+        discount_status = "未知"
+
+    logging.info(f"种子{name}添加成功！状态：{discount_status}")
+    send_message(f"{discount_status}种子{name}添加成功！")
     return True
+
+
+def delete_old_torrents():
+    global flood_torrents
+    logging.info("开始清理符合条件的种子")
+
+    url = QBURL + f"/api/v2/torrents/info?tag={TAGS}"
+    try:
+        response = qb_session.get(url)
+        if response.status_code != 200:
+            logging.error(f"获取种子列表失败，HTTP状态码: {response.status_code}")
+            return
+        torrents = response.json()
+    except Exception as e:
+        logging.error(f"获取种子列表异常: {str(e)}")
+        return
+
+    deleted_ids = []
+    for torrent in torrents:
+        torrent_hash = torrent['hash']
+        name = torrent['name']
+        ratio = torrent['ratio']
+        seeding_time = torrent['seeding_time']  # 单位：秒
+        size = torrent['size']
+
+        # 检查是否达到删除条件
+        if (seeding_time >= MAX_SEEDING_HOURS * 3600) or (ratio >= TARGET_RATIO):
+            # 删除种子及数据
+            delete_url = QBURL + f"/api/v2/torrents/delete?hashes={torrent_hash}&deleteFiles=true"
+            try:
+                response = qb_session.get(delete_url)
+                if response.status_code == 200:
+                    logging.info(f"种子 {name} 已删除（做种时间：{seeding_time / 3600:.1f}h，分享率：{ratio:.2f}）")
+                    deleted_ids.append(torrent_hash)
+                    # 从flood_torrents中移除
+                    flood_torrents = [t for t in flood_torrents if t.get('hash') != torrent_hash]
+                else:
+                    logging.error(f"删除种子 {name} 失败，状态码：{response.status_code}")
+            except Exception as e:
+                logging.error(f"删除种子 {name} 异常: {str(e)}")
+
+    if deleted_ids:
+        send_message(
+            f"已清理 {len(deleted_ids)} 个种子\n做种时间≥{MAX_SEEDING_HOURS}h 或分享率≥{TARGET_RATIO}")
+    save_config()
 
 
 # 当磁盘小于80G时停止刷流
@@ -185,6 +276,34 @@ def get_disk_space():
     return disk_space
 
 
+def get_brush_size():
+    url = QBURL + f"/api/v2/torrents/info?tag={TAGS}"
+    try:
+        response = qb_session.get(url)
+        if response.status_code != 200:
+            logging.error(f"获取刷流种子大小失败，HTTP状态码: {response.status_code}")
+            return None
+        torrents = response.json()
+        total_size = sum(torrent['size'] for torrent in torrents)
+        logging.info(f"当前刷流种子大小为:{total_size / 1024 / 1024 / 1024:.2f}G")
+        return total_size
+    except Exception as e:
+        logging.error(f"获取刷流种子大小异常: {str(e)}")
+        return None
+
+
+def get_newest_torrent(name):
+    url = QBURL + f"/api/v2/torrents/info?sort=added_on&reverse=true"
+    try:
+        response = qb_session.get(url)
+        for torrent in response.json():
+            if torrent['name'] == name:
+                return torrent
+    except Exception as e:
+        logging.error(f"获取最新种子失败: {str(e)}")
+    return None
+
+
 # 从MT获取种子下载地址
 def get_torrent_url(torrent_id):
     url = "https://api.m-team.cc/api/torrent/genDlToken"
@@ -198,7 +317,6 @@ def get_torrent_url(torrent_id):
         return None
     try:
         data = response.json()["data"]
-        print(IPV6)
         if IPV6 == "True":
             download_url = (
                 f'{data.split("?")[0]}?useHttps=true&type=ipv6&{data.split("?")[1]}'
@@ -219,18 +337,26 @@ def get_torrent_url(torrent_id):
 def flood_task():
     global flood_torrents
     logging.info("开始刷流")
+
+    # 新增刷流大小检查
+    current_brush_size = get_brush_size()
+    if current_brush_size is None:
+        return
+    if current_brush_size >= BRUSH_SIZE:
+        logging.info(f"当前刷流大小已达上限 {BRUSH_SIZE / 1024 / 1024 / 1024:.2f}G，停止刷流")
+        send_message(f"刷流大小已达上限 {BRUSH_SIZE / 1024 / 1024 / 1024:.2f}G，停止刷流")
+        return
+
     disk_space = get_disk_space()
     if disk_space is None:
         return
     elif disk_space <= SPACE:
         logging.info("磁盘空间不足，停止刷流")
-        send_telegram_message(
-            f"磁盘空间不足，停止刷流，当前剩余空间为{disk_space / 1024 / 1024 / 1024:.2f}G"
-        )
-        send_server3_message(
+        send_message(
             f"磁盘空间不足，停止刷流，当前剩余空间为{disk_space / 1024 / 1024 / 1024:.2f}G"
         )
         return
+
     try:
         response = mt_session.get(RSS)
     except requests.exceptions.RequestException as e:
@@ -260,6 +386,9 @@ def flood_task():
             logging.info(
                 f"种子{torrent_id}大小解析失败，可能是生成的RSS链接未勾选[大小]，标题为：{title}"
             )
+            continue
+        if name_pattern and not name_pattern.search(title):
+            logging.info(f"种子{torrent_id}名称不符合正则要求\t名称：{title}")
             continue
         # 取最后一个匹配的组
         size, unit = matches[-1][0], matches[-1][2]
@@ -310,8 +439,8 @@ def flood_task():
                 f"种子{torrent_id}非免费或请求异常，忽略种子, 信息为：{detail}"
             )
             continue
-        if discount not in ["FREE", "_2X_FREE"]:
-            logging.info(f"种子{torrent_id}非免费资源，忽略种子，状态为：{discount}")
+        if not ALLOW_NON_FREE and discount not in ["FREE", "_2X_FREE"]:
+            logging.info(f"[非免费模式]种子{torrent_id}非免费资源，状态为：{discount}")
             continue
         if (
                 discount_end_time is not None
@@ -335,33 +464,34 @@ def flood_task():
         download_url = get_torrent_url(torrent_id)
         if download_url is None:
             continue
-        if not add_torrent(download_url, name):
-            continue
-        disk_space -= size
-        flood_torrents.append(
-            {
-                "name": name,
-                "id": torrent_id,
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "size": size,
-                "url": download_url,
-                "discount": discount,
-                "discount_end_time": (
-                    discount_end_time.strftime("%Y-%m-%d %H:%M:%S")
-                    if discount_end_time is not None
-                    else None
-                ),
-            }
-        )
-        if disk_space <= SPACE:
-            logging.info("磁盘空间不足，停止刷流")
-            send_telegram_message(
-                f"磁盘空间不足，停止刷流，当前剩余空间为{disk_space / 1024 / 1024 / 1024:.2f}G"
+        if add_torrent(download_url, name, detail):
+            disk_space -= size
+            flood_torrents.append(
+                {
+                    "name": name,
+                    "id": torrent_id,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "size": size,
+                    "url": download_url,
+                    "discount": discount,
+                    "discount_end_time": (
+                        discount_end_time.strftime("%Y-%m-%d %H:%M:%S")
+                        if discount_end_time is not None
+                        else None
+                    ),
+                }
             )
-            send_telegram_message(
-                f"磁盘空间不足，停止刷流，当前剩余空间为{disk_space / 1024 / 1024 / 1024:.2f}G"
-            )
-            break
+            # 获取最新添加的种子hash（需要新增QB API查询）
+            time.sleep(5)  # 等待QB更新列表
+            newest_torrent = get_newest_torrent(name)
+            if newest_torrent:
+                flood_torrents[-1]['hash'] = newest_torrent['hash']
+            if disk_space <= SPACE:
+                logging.info("磁盘空间不足，停止刷流")
+                send_message(
+                    f"磁盘空间不足，停止刷流，当前剩余空间为{disk_space / 1024 / 1024 / 1024:.2f}G"
+                )
+                break
 
 
 def login():
@@ -396,10 +526,31 @@ def save_config():
         json.dump(flood_torrents, f, ensure_ascii=False, indent=4)
 
 
+def load_send():
+    cur_path = path.abspath(path.dirname(__file__))
+    if path.exists(cur_path + "/notify.py"):
+        try:
+            from notify import send
+            return send
+        except ImportError:
+            return False
+    else:
+        return False
+
+
+def send(title, content):
+    send_ = load_send()
+    if callable(send_):
+        send_(title, content)
+    else:
+        logging.info("notify failed")
+
+
 if __name__ == "__main__":
     read_config()
     if not login():
         logging.error("QB登录失败，程序退出。")
         exit(1)
+    delete_old_torrents()
     flood_task()
     save_config()
