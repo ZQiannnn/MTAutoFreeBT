@@ -46,6 +46,8 @@ MAX_SEEDING_HOURS = int(os.environ.get("MT_BRUSH_MAX_SEEDING_HOURS", 48))  # 最
 TARGET_RATIO = float(os.environ.get("MT_BRUSH_TARGET_RATIO", 3.0))  # 目标分享率
 NAME_REGEX = os.environ.get("MT_BRUSH_NAME_REGEX", "")  # 默认空字符串
 SEND_METHOD = os.environ.get("MT_BRUSH_SEND_METHOD", "normal").lower()  # normal/telegram/server/all
+CATEGORY = os.environ.get("MT_BRUSH_CATEGORY", "MT刷流")
+
 name_pattern = None
 if NAME_REGEX:
     try:
@@ -174,6 +176,7 @@ def add_torrent(url, name, detail=None):
                 add_torrent_url,
                 data={
                     "torrents": response.content,
+                    "category": CATEGORY,  # 新增分类
                     "tags": TAGS,
                     "savepath": DOWNLOADPATH,
                 },
@@ -187,6 +190,7 @@ def add_torrent(url, name, detail=None):
             response = qb_session.post(
                 add_torrent_url,
                 data={"urls": url,
+                      "category": CATEGORY,  # 新增分类
                       "tags": TAGS,
                       "savepath": DOWNLOADPATH,
                       },
