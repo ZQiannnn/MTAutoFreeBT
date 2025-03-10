@@ -1,4 +1,18 @@
 # MTAutoFreeBT
+Fork 新增功能：
+```
+1.变量增加前缀，防止青龙变量冲突
+2.增加删种功能
+3.增加多种通知方式
+4.增加多项配置：
+MT_BRUSH_NOTIFY_ENABLE: 启用通知
+MT_BRUSH_SEND_METHOD: 通知方式:normal-采用notify.py通知，telegram-原telegram，server-原server酱，all-以上全部
+MT_BRUSH_BRUSH_SIZE: 刷流种子大小
+MT_BRUSH_ALLOW_NON_FREE: 允许下载不免费种子
+MT_BRUSH_NAME_REGEX: 种子名称过滤(正则表达式)
+MT_BRUSH_MAX_SEEDING_HOURS: 自动删种-最大做种时间（小时）
+MT_BRUSH_TARGET_RATIO: 自动删种-目标分享率
+```
 基于馒头APIKEY的RSS刷流工具
 
 # 直接docker使用用法：
