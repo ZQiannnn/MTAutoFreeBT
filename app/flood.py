@@ -39,7 +39,7 @@ TAGS = os.environ.get("MT_BRUSH_TAGS", "MT刷流")
 LS_RATIO = float(os.environ.get("MT_BRUSH_LS_RATIO", 1))
 IPV6 = os.environ.get("MT_BRUSH_IPV6", False)
 
-NOTIFY_ENABLE = os.environ.get("MT_BRUSH_NOTIFY_ENABLE", False)
+NOTIFY_ENABLE = os.environ.get("MT_BRUSH_NOTIFY_ENABLE", 'False')
 BRUSH_SIZE = int(float(os.environ.get("MT_BRUSH_BRUSH_SIZE", 80)) * 1024 * 1024 * 1024)
 ALLOW_NON_FREE = os.environ.get("MT_BRUSH_ALLOW_NON_FREE", "False").lower() == "true"
 MAX_SEEDING_HOURS = int(os.environ.get("MT_BRUSH_MAX_SEEDING_HOURS", 48))  # 最大做种时间（小时）
@@ -67,7 +67,7 @@ flood_torrents = []
 
 
 def send_message(message):
-    if not NOTIFY_ENABLE:
+    if NOTIFY_ENABLE == "False":
         return
 
     # 根据配置选择发送方式
